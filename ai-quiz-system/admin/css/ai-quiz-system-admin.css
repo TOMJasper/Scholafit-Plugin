@@ -1,0 +1,193 @@
+/**
+ * Admin styles for AI Quiz System
+ */
+
+/* General Admin Styles */
+.aiqs-admin-dashboard {
+    margin-top: 20px;
+}
+
+.aiqs-admin-card {
+    background-color: #fff;
+    border: 1px solid #e5e5e5;
+    border-radius: 4px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+}
+
+.aiqs-admin-stats {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 0 -10px;
+}
+
+.aiqs-admin-stat {
+    flex: 1 0 150px;
+    margin: 10px;
+    padding: 15px;
+    background-color: #f8f9fc;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.aiqs-stat-value {
+    display: block;
+    font-size: 24px;
+    font-weight: bold;
+    color: #4e73df;
+    margin-bottom: 5px;
+}
+
+.aiqs-stat-label {
+    color: #5a5c69;
+    font-size: 14px;
+}
+
+.aiqs-admin-actions {
+    margin: 20px 0;
+}
+
+/* Forms */
+.aiqs-admin-form {
+    max-width: 800px;
+}
+
+.aiqs-form-row {
+    margin-bottom: 15px;
+}
+
+.aiqs-form-row label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+.aiqs-form-row input[type="text"],
+.aiqs-form-row input[type="number"],
+.aiqs-form-row textarea,
+.aiqs-form-row select {
+    width: 100%;
+    max-width: 500px;
+}
+
+.aiqs-form-actions {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+}
+
+/* Subject Fields */
+.aiqs-subject-field {
+    display: flex;
+    margin-bottom: 10px;
+    align-items: center;
+}
+
+.aiqs-subject-field input {
+    flex: 1;
+    margin-right: 10px;
+}
+
+/* Tabs */
+.aiqs-admin-tabs {
+    margin-top: 20px;
+}
+
+.aiqs-tabs-nav {
+    display: flex;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-bottom: 1px solid #ccc;
+}
+
+.aiqs-tabs-nav li {
+    margin: 0 5px 0 0;
+}
+
+.aiqs-tabs-nav a {
+    display: block;
+    padding: 10px 15px;
+    border: 1px solid #ccc;
+    border-bottom: none;
+    background: #f5f5f5;
+    text-decoration: none;
+    color: #555;
+}
+
+.aiqs-tabs-nav li.active a {
+    background: #fff;
+    border-bottom: 1px solid #fff;
+    margin-bottom: -1px;
+    color: #000;
+}
+
+.aiqs-tab-panel {
+    display: none;
+    padding: 20px;
+    border: 1px solid #ccc;
+    border-top: none;
+}
+
+.aiqs-tab-panel.active {
+    display: block;
+}
+
+/* Modals */
+.aiqs-modal {
+    display: none;
+    position: fixed;
+    z-index: 100000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.4);
+}
+
+.aiqs-modal-content {
+    background-color: #fefefe;
+    margin: 5% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 800px;
+    border-radius: 4px;
+    position: relative;
+}
+
+.aiqs-modal-close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.aiqs-modal-close:hover {
+    color: black;
+}
+
+/* Admin Filters */
+.aiqs-admin-filters {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f8f9fc;
+    border: 1px solid #e3e6f0;
+    border-radius: 4px;
+}
+
+.aiqs-admin-filters select {
+    margin-right: 10px;
+    min-width: 200px;
+}
+
+/* Admin Notices */
+.aiqs-admin-notice {
+    padding: 15px;
+    background: #f8f9fc;
+    border-left: 4px solid #4e73df;
+    margin: 20px 0;
+}
