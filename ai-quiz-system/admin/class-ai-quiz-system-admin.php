@@ -448,6 +448,27 @@ class AI_Quiz_System_Admin {
         if ($result === false) {
             wp_send_json_error(['message' => __('Failed to add subject.', 'ai-quiz-system')]);
         }
+        /**
+ * AJAX handler for getting subjects by exam ID
+ */
+public function get_subjects_ajax() {
+    check_ajax_referer('aiqs_admin_nonce', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ai-quiz-system')));
+    }
+    
+    $exam_id = isset($_POST['exam_id']) ? intval($_POST['exam_id']) : 0;
+    
+    if (!$exam_id) {
+        wp_send_json_error(array('message' => __('Invalid exam ID.', 'ai-quiz-system')));
+    }
+    
+    $db = new AI_Quiz_System_DB();
+    $subjects = $db->get_exam_subjects($exam_id);
+    
+    wp_send_json_success($subjects);
+}
         
         wp_send_json_success(['message' => __('Subject added successfully.', 'ai-quiz-system')]);
     }
