@@ -3,6 +3,24 @@
 if (!defined('WPINC')) {
     die;
 }
+
+// Get settings with fallbacks
+$ai_settings = get_option('aiqs_ai_settings', array(
+    'provider' => 'openai',
+    'api_key' => '',
+    'enable_chatbot' => true,
+    'question_source' => 'ai',
+    'fallback_to_stored' => true
+));
+
+$general_settings = get_option('aiqs_general_settings', array(
+    'default_time_limit' => 3600,
+    'default_passing_score' => 60,
+    'default_questions_per_subject' => 20,
+    'allow_guest_access' => true,
+    'show_explanations' => true,
+    'enable_performance_tracking' => true
+));
 ?>
 
 <div class="wrap">
