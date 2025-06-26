@@ -8,6 +8,12 @@
  * Author URI: https://jasperphygitals.com
  * Text Domain: ai-quiz-system
  * Domain Path: /languages
+ * Requires at least: 5.0
+ * Tested up to: 6.4
+ * Requires PHP: 7.4
+ * Network: false
+ * License: GPL v2 or later
+ * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  */
 
 // If this file is called directly, abort.
@@ -24,149 +30,58 @@ define('AIQS_PLUGIN_BASENAME', plugin_basename(__FILE__));
 /**
  * Add debug logging function for troubleshooting
  */
-function aiqs_debug_log($message, $data = null) {
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        if ($data !== null) {
-            error_log('AI Quiz Debug: ' . $message . ' - Data: ' . print_r($data, true));
-        } else {
-            error_log('AI Quiz Debug: ' . $message);
+if (!function_exists('aiqs_debug_log')) {
+    function aiqs_debug_log($message, $data = null) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            if ($data !== null) {
+                error_log('AI Quiz Debug: ' . $message . ' - Data: ' . print_r($data, true));
+            } else {
+                error_log('AI Quiz Debug: ' . $message);
+            }
         }
     }
 }
 
 /**
- * Add diagnostic page for troubleshooting
+ * Check for required WordPress version and PHP version
  */
-add_action('admin_menu', 'aiqs_add_diagnostic_page', 99);
-function aiqs_add_diagnostic_page() {
-    add_submenu_page(
-        'ai-quiz-system',
-        'Diagnostics',
-        'Diagnostics',
-        'manage_options',
-        'aiqs-diagnostics',
-        'aiqs_display_diagnostics'
-    );
+function aiqs_check_requirements() {
+    global $wp_version;
+    
+    $required_wp_version = '5.0';
+    $required_php_version = '7.4';
+    
+    if (version_compare($wp_version, $required_wp_version, '<')) {
+        deactivate_plugins(plugin_basename(__FILE__));
+        wp_die(
+            sprintf(
+                __('AI Quiz System requires WordPress %s or higher. Your current version is %s.', 'ai-quiz-system'),
+                $required_wp_version,
+                $wp_version
+            )
+        );
+    }
+    
+    if (version_compare(phpversion(), $required_php_version, '<')) {
+        deactivate_plugins(plugin_basename(__FILE__));
+        wp_die(
+            sprintf(
+                __('AI Quiz System requires PHP %s or higher. Your current version is %s.', 'ai-quiz-system'),
+                $required_php_version,
+                phpversion()
+            )
+        );
+    }
 }
-
-function aiqs_display_diagnostics() {
-    global $wpdb;
-    echo '<div class="wrap"><h1>AI Quiz System Diagnostics</h1>';
-    
-    // Test API connection
-    echo '<h2>API Test</h2>';
-    $ai_engine = new AI_Quiz_System_Engine();
-    $result = $ai_engine->test_connection();
-    echo '<pre>' . print_r($result, true) . '</pre>';
-    
-    // Check database tables
-    echo '<h2>Database Tables</h2>';
-    $tables = [
-        $wpdb->prefix . 'aiqs_exams',
-        $wpdb->prefix . 'aiqs_subjects',
-        $wpdb->prefix . 'aiqs_questions',
-        $wpdb->prefix . 'aiqs_quiz_attempts',
-        $wpdb->prefix . 'aiqs_quiz_answers',
-        $wpdb->prefix . 'aiqs_quiz_performance',
-        $wpdb->prefix . 'aiqs_chatbot_history'
-    ];
-    
-    foreach ($tables as $table) {
-        $exists = $wpdb->get_var("SHOW TABLES LIKE '$table'");
-        echo $table . ': ' . ($exists ? 'Exists' : 'Missing') . '<br>';
-        
-        if ($exists) {
-            // Show table count
-            $count = $wpdb->get_var("SELECT COUNT(*) FROM $table");
-            echo '&nbsp;&nbsp;Record count: ' . $count . '<br>';
-            
-            // Show table structure
-            $structure = $wpdb->get_results("DESCRIBE $table");
-            echo '&nbsp;&nbsp;Structure: <pre>' . print_r($structure, true) . '</pre><br>';
-        }
-    }
-    
-    // Check session handling
-    echo '<h2>Session Test</h2>';
-    $test_value = 'test_' . time();
-    set_transient('aiqs_test_transient', $test_value, 300);
-    $retrieved = get_transient('aiqs_test_transient');
-    echo 'Session test: ' . ($retrieved === $test_value ? 'Working' : 'Failed') . '<br>';
-    
-    // Check AI settings
-    echo '<h2>AI Settings</h2>';
-    $ai_settings = get_option('aiqs_ai_settings', []);
-    echo 'Provider: ' . (isset($ai_settings['provider']) ? $ai_settings['provider'] : 'Not set') . '<br>';
-    echo 'API Key: ' . (isset($ai_settings['api_key']) && !empty($ai_settings['api_key']) ? 'Set (hidden)' : 'Not set') . '<br>';
-    echo 'Question Source: ' . (isset($ai_settings['question_source']) ? $ai_settings['question_source'] : 'Not set') . '<br>';
-    echo 'Fallback to Stored: ' . (isset($ai_settings['fallback_to_stored']) && $ai_settings['fallback_to_stored'] ? 'Yes' : 'No') . '<br>';
-    
-    // Plugin file check
-    echo '<h2>Plugin Files Check</h2>';
-    $files = [
-        'ai-quiz-system.php',
-        'elementor-integration.php',
-        'includes/class-ai-quiz-system.php',
-        'includes/class-ai-quiz-system-activator.php',
-        'includes/class-ai-quiz-system-deactivator.php',
-        'includes/class-ai-quiz-system-db.php',
-        'includes/class-ai-quiz-system-engine.php',
-        'includes/class-ai-quiz-system-chatbot.php',
-        'includes/class-ai-quiz-system-shortcodes.php',
-        'includes/class-ai-quiz-system-loader.php',
-        'includes/image-support.php',
-        'admin/bulk-import.php',
-        'public/class-ai-quiz-system-public.php',
-        'public/partials/quiz.php',
-        'public/partials/performance.php',
-        'public/partials/chatbot.php',
-        'public/js/ai-quiz-system-public.js',
-        'public/css/ai-quiz-system-public.css',
-    ];
-    
-    foreach ($files as $file) {
-        $path = AIQS_PLUGIN_DIR . $file;
-        echo $file . ': ' . (file_exists($path) ? 'Exists' : 'Missing') . '<br>';
-        if (file_exists($path)) {
-            echo '&nbsp;&nbsp;Size: ' . filesize($path) . ' bytes<br>';
-            echo '&nbsp;&nbsp;Modified: ' . date('Y-m-d H:i:s', filemtime($path)) . '<br>';
-        }
-    }
-    
-    // WordPress info
-    echo '<h2>WordPress Environment</h2>';
-    echo 'WordPress Version: ' . get_bloginfo('version') . '<br>';
-    echo 'PHP Version: ' . phpversion() . '<br>';
-    echo 'MySQL Version: ' . $wpdb->db_version() . '<br>';
-    echo 'WP_DEBUG: ' . (defined('WP_DEBUG') && WP_DEBUG ? 'Enabled' : 'Disabled') . '<br>';
-    echo 'Active Plugins: ' . implode(', ', get_option('active_plugins')) . '<br>';
-    
-    // Test demo questions generation
-    echo '<h2>Demo Questions Test</h2>';
-    $demo_subject = "Mathematics";
-    $ai_engine = new AI_Quiz_System_Engine();
-    
-    // Using the reflection API to access the private method
-    try {
-        $reflection = new ReflectionClass($ai_engine);
-        $method = $reflection->getMethod('generate_demo_questions');
-        $method->setAccessible(true);
-        $demo_questions = $method->invokeArgs($ai_engine, [$demo_subject, 3, 'mixed']);
-        
-        echo 'Demo questions generated: ' . count($demo_questions) . '<br>';
-        echo '<pre>' . print_r($demo_questions, true) . '</pre>';
-    } catch (Exception $e) {
-        echo 'Error testing demo questions: ' . $e->getMessage() . '<br>';
-    }
-    
-    // End diagnostics
-    echo '</div>';
-}
+register_activation_hook(__FILE__, 'aiqs_check_requirements');
 
 /**
  * The code that runs during plugin activation.
  */
 function activate_ai_quiz_system() {
+    // Check requirements first
+    aiqs_check_requirements();
+    
     require_once AIQS_PLUGIN_DIR . 'includes/class-ai-quiz-system-activator.php';
     AI_Quiz_System_Activator::activate();
 }
@@ -182,23 +97,214 @@ function deactivate_ai_quiz_system() {
 register_activation_hook(__FILE__, 'activate_ai_quiz_system');
 register_deactivation_hook(__FILE__, 'deactivate_ai_quiz_system');
 
-// Include Elementor integration
-require_once AIQS_PLUGIN_DIR . 'elementor-integration.php';
-
-// Include bulk import and image support features
-require_once AIQS_PLUGIN_DIR . 'admin/bulk-import.php';
-require_once AIQS_PLUGIN_DIR . 'includes/image-support.php';
-
 /**
- * The core plugin class
+ * Load plugin files with proper error handling
  */
-require AIQS_PLUGIN_DIR . 'includes/class-ai-quiz-system.php';
+function aiqs_load_plugin_files() {
+    $required_files = array(
+        'includes/class-ai-quiz-system.php',
+        'includes/class-ai-quiz-system-db.php',
+        'includes/class-ai-quiz-system-engine.php',
+        'includes/class-ai-quiz-system-chatbot.php',
+        'includes/class-ai-quiz-system-shortcodes.php',
+        'includes/class-ai-quiz-system-loader.php',
+        'includes/class-ai-quiz-system-i18n.php',
+        'includes/class-ai-quiz-system-activator.php',
+        'includes/class-ai-quiz-system-deactivator.php',
+        'admin/class-ai-quiz-system-admin.php',
+        'public/class-ai-quiz-system-public.php'
+    );
+    
+    foreach ($required_files as $file) {
+        $file_path = AIQS_PLUGIN_DIR . $file;
+        if (file_exists($file_path)) {
+            require_once $file_path;
+        } else {
+            aiqs_debug_log('Missing required file: ' . $file);
+            add_action('admin_notices', function() use ($file) {
+                echo '<div class="notice notice-error"><p>';
+                echo sprintf(__('AI Quiz System: Missing required file %s', 'ai-quiz-system'), esc_html($file));
+                echo '</p></div>';
+            });
+        }
+    }
+}
+add_action('plugins_loaded', 'aiqs_load_plugin_files', 1);
 
 /**
- * Begins execution of the plugin.
+ * Include optional enhancement files
+ */
+function aiqs_load_enhancement_files() {
+    $enhancement_files = array(
+        'elementor-integration.php',
+        'admin/bulk-import.php',
+        'includes/image-support.php'
+    );
+    
+    foreach ($enhancement_files as $file) {
+        $file_path = AIQS_PLUGIN_DIR . $file;
+        if (file_exists($file_path)) {
+            require_once $file_path;
+        }
+    }
+}
+add_action('plugins_loaded', 'aiqs_load_enhancement_files', 5);
+
+/**
+ * Initialize the plugin
  */
 function run_ai_quiz_system() {
-    $plugin = new AI_Quiz_System();
-    $plugin->run();
+    // Check if the main class exists
+    if (!class_exists('AI_Quiz_System')) {
+        aiqs_debug_log('AI_Quiz_System class not found');
+        return;
+    }
+    
+    try {
+        $plugin = new AI_Quiz_System();
+        $plugin->run();
+        aiqs_debug_log('AI Quiz System initialized successfully');
+    } catch (Exception $e) {
+        aiqs_debug_log('Error initializing AI Quiz System: ' . $e->getMessage());
+        add_action('admin_notices', function() use ($e) {
+            echo '<div class="notice notice-error"><p>';
+            echo sprintf(__('AI Quiz System initialization error: %s', 'ai-quiz-system'), esc_html($e->getMessage()));
+            echo '</p></div>';
+        });
+    }
 }
-run_ai_quiz_system();
+add_action('plugins_loaded', 'run_ai_quiz_system', 10);
+
+/**
+ * Add admin notices for missing dependencies
+ */
+function aiqs_admin_notices() {
+    // Check if required WordPress functions exist
+    if (!function_exists('wp_enqueue_script') || !function_exists('wp_localize_script')) {
+        echo '<div class="notice notice-error"><p>';
+        echo __('AI Quiz System: WordPress core functions are missing. Please check your WordPress installation.', 'ai-quiz-system');
+        echo '</p></div>';
+    }
+    
+    // Check database connection
+    global $wpdb;
+    if (!$wpdb || !$wpdb->ready) {
+        echo '<div class="notice notice-error"><p>';
+        echo __('AI Quiz System: Database connection issue detected.', 'ai-quiz-system');
+        echo '</p></div>';
+    }
+}
+add_action('admin_notices', 'aiqs_admin_notices');
+
+/**
+ * Add safety checks for settings retrieval
+ */
+function aiqs_get_safe_option($option_name, $default = array()) {
+    $option = get_option($option_name, $default);
+    
+    // Ensure we always return an array for settings
+    if (!is_array($option)) {
+        aiqs_debug_log('Invalid option format for: ' . $option_name);
+        return $default;
+    }
+    
+    return $option;
+}
+
+/**
+ * Error handler for plugin-specific errors
+ */
+function aiqs_error_handler($errno, $errstr, $errfile, $errline) {
+    // Only handle errors from our plugin
+    if (strpos($errfile, AIQS_PLUGIN_DIR) !== false) {
+        aiqs_debug_log("Plugin Error: {$errstr} in {$errfile} on line {$errline}");
+        
+        // For fatal errors, try to prevent white screen
+        if ($errno === E_ERROR || $errno === E_PARSE || $errno === E_CORE_ERROR) {
+            if (!headers_sent()) {
+                http_response_code(500);
+                echo 'AI Quiz System encountered a critical error. Please check the error logs.';
+            }
+            return true;
+        }
+    }
+    
+    return false; // Let WordPress handle other errors
+}
+set_error_handler('aiqs_error_handler');
+
+/**
+ * Plugin safety check on admin pages
+ */
+function aiqs_admin_safety_check() {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+    
+    // Check if plugin files are corrupted
+    $critical_files = array(
+        'includes/class-ai-quiz-system-db.php',
+        'includes/class-ai-quiz-system-engine.php',
+        'admin/class-ai-quiz-system-admin.php'
+    );
+    
+    $corrupted_files = array();
+    foreach ($critical_files as $file) {
+        $file_path = AIQS_PLUGIN_DIR . $file;
+        if (!file_exists($file_path) || filesize($file_path) < 100) {
+            $corrupted_files[] = $file;
+        }
+    }
+    
+    if (!empty($corrupted_files)) {
+        add_action('admin_notices', function() use ($corrupted_files) {
+            echo '<div class="notice notice-error"><p>';
+            echo __('AI Quiz System: Corrupted or missing files detected: ', 'ai-quiz-system');
+            echo esc_html(implode(', ', $corrupted_files));
+            echo '</p></div>';
+        });
+    }
+}
+add_action('admin_init', 'aiqs_admin_safety_check');
+
+/**
+ * Memory limit check
+ */
+function aiqs_memory_check() {
+    $memory_limit = wp_convert_hr_to_bytes(ini_get('memory_limit'));
+    $recommended_memory = 64 * 1024 * 1024; // 64MB
+    
+    if ($memory_limit < $recommended_memory) {
+        add_action('admin_notices', function() {
+            echo '<div class="notice notice-warning"><p>';
+            echo __('AI Quiz System: Your PHP memory limit may be too low for optimal performance. Consider increasing it to at least 64MB.', 'ai-quiz-system');
+            echo '</p></div>';
+        });
+    }
+}
+add_action('admin_init', 'aiqs_memory_check');
+
+/**
+ * Clean up on uninstall
+ */
+function aiqs_uninstall_cleanup() {
+    // Only run during actual uninstall
+    if (!defined('WP_UNINSTALL_PLUGIN')) {
+        return;
+    }
+    
+    // Remove plugin options
+    delete_option('aiqs_ai_settings');
+    delete_option('aiqs_general_settings');
+    
+    // Clean up transients
+    delete_transient('aiqs_quiz_*');
+    
+    // Drop tables if configured to do so
+    $cleanup_option = get_option('aiqs_cleanup_on_uninstall', false);
+    if ($cleanup_option) {
+        require_once AIQS_PLUGIN_DIR . 'includes/class-ai-quiz-system-db.php';
+        AI_Quiz_System_DB::drop_tables();
+    }
+}
+register_uninstall_hook(__FILE__, 'aiqs_uninstall_cleanup');
