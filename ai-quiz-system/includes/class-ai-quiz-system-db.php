@@ -203,6 +203,17 @@ class AI_Quiz_System_DB {
     }
 
     /**
+     * Get a single subject by ID.
+     */
+    public function get_subject($id) {
+        global $wpdb;
+        
+        return $wpdb->get_row(
+            $wpdb->prepare("SELECT * FROM {$this->table_subjects} WHERE id = %d", $id)
+        );
+    }
+
+    /**
      * Get subjects for an exam.
      */
     public function get_exam_subjects($exam_id, $subject_id = null) {
@@ -226,16 +237,44 @@ class AI_Quiz_System_DB {
     }
 
     /**
-     * Get questions for a subject, with optional limit - FIXED VERSION.
+     * Get subjects with details (including exam name and question count).
+     */
+    public function get_subjects_with_details($exam_id = null) {
+        global $wpdb;
+        
+        $sql = "SELECT s.*, e.name as exam_name, 
+                COUNT(q.id) as question_count
+                FROM {$this->table_subjects} s
+                LEFT JOIN {$this->table_exams} e ON s.exam_id = e.id
+                LEFT JOIN {$this->table_questions} q ON s.id = q.subject_id
+                WHERE s.status = 'active'";
+        
+        $params = array();
+        if ($exam_id) {
+            $sql .= " AND s.exam_id = %d";
+            $params[] = $exam_id;
+        }
+        
+        $sql .= " GROUP BY s.id ORDER BY e.name, s.name";
+        
+        if (!empty($params)) {
+            return $wpdb->get_results($wpdb->prepare($sql, $params));
+        } else {
+            return $wpdb->get_results($sql);
+        }
+    }
+
+    /**
+     * Get questions for a subject, with optional limit.
      */
     public function get_subject_questions($subject_id, $limit = 0, $source = 'all') {
         global $wpdb;
         
-        aiqs_debug_log('Getting subject questions', [
+        aiqs_debug_log('Getting subject questions', array(
             'subject_id' => $subject_id,
             'limit' => $limit,
             'source' => $source
-        ]);
+        ));
         
         $sql = "SELECT * FROM {$this->table_questions} WHERE subject_id = %d";
         $params = array($subject_id);
@@ -255,71 +294,74 @@ class AI_Quiz_System_DB {
         
         $questions = $wpdb->get_results($wpdb->prepare($sql, $params));
         
-        aiqs_debug_log('Retrieved questions', [
+        aiqs_debug_log('Retrieved questions', array(
             'count' => count($questions),
             'subject_id' => $subject_id,
             'source' => $source
-        ]);
+        ));
         
         return $questions;
     }
 
     /**
-     * Create a new quiz attempt.
+     * Get questions by subject with fallback options.
      */
-    public function create_quiz_attempt($user_id, $exam_id, $session_id, $ip_address) {
+    public function get_questions_by_subject($subject_id, $limit = 10, $difficulty = 'mixed') {
         global $wpdb;
         
-        $result = $wpdb->insert(
-            $this->table_quiz_attempts,
-            array(
-                'user_id' => $user_id,
-                'exam_id' => $exam_id,
-                'session_id' => $session_id,
-                'ip_address' => $ip_address,
-                'status' => 'ongoing'
-            )
-        );
+        $sql = "SELECT * FROM {$this->table_questions} WHERE subject_id = %d";
+        $params = array($subject_id);
         
-        if ($result === false) {
-            aiqs_debug_log('Failed to create quiz attempt', $wpdb->last_error);
-            return false;
+        if ($difficulty !== 'mixed') {
+            $sql .= " AND difficulty = %s";
+            $params[] = $difficulty;
         }
         
-        $attempt_id = $wpdb->insert_id;
-        aiqs_debug_log('Created quiz attempt', ['attempt_id' => $attempt_id]);
+        $sql .= " ORDER BY RAND() LIMIT %d";
+        $params[] = $limit;
         
-        return $attempt_id;
+        return $wpdb->get_results($wpdb->prepare($sql, $params));
     }
 
     /**
-     * Add a question to the database - IMPROVED VERSION.
+     * Get a single question by ID.
+     */
+    public function get_question($id) {
+        global $wpdb;
+        
+        return $wpdb->get_row(
+            $wpdb->prepare("SELECT * FROM {$this->table_questions} WHERE id = %d", $id)
+        );
+    }
+
+    /**
+     * Add a question to the database.
      */
     public function add_question($data) {
         global $wpdb;
         
         // Validate required fields
-        $required_fields = ['subject_id', 'question', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_answer'];
+        $required_fields = array('subject_id', 'question', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_answer');
         foreach ($required_fields as $field) {
             if (!isset($data[$field]) || empty($data[$field])) {
-                aiqs_debug_log('Missing required field for question', ['field' => $field]);
+                aiqs_debug_log('Missing required field for question', array('field' => $field));
                 return false;
             }
         }
         
         // Set defaults for optional fields
-        $defaults = [
+        $defaults = array(
             'explanation' => '',
             'difficulty' => 'medium',
             'source' => 'ai',
             'image_url' => null
-        ];
+        );
         
         $data = wp_parse_args($data, $defaults);
         
         // Validate correct_answer
-        if (!in_array(strtoupper($data['correct_answer']), ['A', 'B', 'C', 'D'])) {
-            aiqs_debug_log('Invalid correct_answer', ['correct_answer' => $data['correct_answer']]);
+        if (!in_array(strtoupper($data['correct_answer']), array('A', 'B', 'C', 'D'))) {
+            aiqs_debug_log('Invalid correct_answer', array('correct_answer' => $data['correct_answer']));
             return false;
         }
         
@@ -346,13 +388,141 @@ class AI_Quiz_System_DB {
         }
         
         $question_id = $wpdb->insert_id;
-        aiqs_debug_log('Added question to database', [
+        aiqs_debug_log('Added question to database', array(
             'question_id' => $question_id,
             'subject_id' => $data['subject_id'],
             'source' => $data['source']
-        ]);
+        ));
         
         return $question_id;
+    }
+
+    /**
+     * Update a question.
+     */
+    public function update_question($question_id, $question_data) {
+        global $wpdb;
+        
+        $question_data['updated_at'] = current_time('mysql');
+        
+        return $wpdb->update(
+            $this->table_questions,
+            $question_data,
+            array('id' => $question_id)
+        );
+    }
+
+    /**
+     * Delete a question.
+     */
+    public function delete_question($question_id) {
+        global $wpdb;
+        
+        return $wpdb->delete(
+            $this->table_questions,
+            array('id' => $question_id)
+        );
+    }
+
+    /**
+     * Create a new quiz attempt.
+     */
+    public function create_quiz_attempt($user_id, $exam_id, $session_id, $ip_address) {
+        global $wpdb;
+        
+        $result = $wpdb->insert(
+            $this->table_quiz_attempts,
+            array(
+                'user_id' => $user_id,
+                'exam_id' => $exam_id,
+                'session_id' => $session_id,
+                'ip_address' => $ip_address,
+                'status' => 'ongoing'
+            )
+        );
+        
+        if ($result === false) {
+            aiqs_debug_log('Failed to create quiz attempt', $wpdb->last_error);
+            return false;
+        }
+        
+        $attempt_id = $wpdb->insert_id;
+        aiqs_debug_log('Created quiz attempt', array('attempt_id' => $attempt_id));
+        
+        return $attempt_id;
+    }
+
+    /**
+     * Create quiz session.
+     */
+    public function create_quiz_session($session_data) {
+        global $wpdb;
+        
+        $result = $wpdb->insert(
+            $this->table_quiz_attempts,
+            array(
+                'user_id' => $session_data['user_id'],
+                'exam_id' => $session_data['exam_id'],
+                'session_id' => $session_data['session_id'],
+                'status' => 'ongoing',
+                'start_time' => $session_data['start_time'],
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
+            )
+        );
+        
+        if ($result) {
+            $attempt_id = $wpdb->insert_id;
+            
+            // Store session data in transient
+            set_transient('aiqs_quiz_' . $session_data['session_id'], $session_data, 3600); // 1 hour
+            
+            return $attempt_id;
+        }
+        
+        return false;
+    }
+
+    /**
+     * Get quiz session.
+     */
+    public function get_quiz_session($session_id) {
+        // Try to get from transient first
+        $session_data = get_transient('aiqs_quiz_' . $session_id);
+        
+        if ($session_data) {
+            return (object) $session_data;
+        }
+        
+        // Fallback to database
+        global $wpdb;
+        
+        return $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$this->table_quiz_attempts} WHERE session_id = %s",
+                $session_id
+            )
+        );
+    }
+
+    /**
+     * Update quiz session.
+     */
+    public function update_quiz_session($session_id, $update_data) {
+        // Update transient
+        $session_data = get_transient('aiqs_quiz_' . $session_id);
+        if ($session_data) {
+            $session_data = array_merge($session_data, $update_data);
+            set_transient('aiqs_quiz_' . $session_id, $session_data, 3600);
+        }
+        
+        // Update database
+        global $wpdb;
+        
+        return $wpdb->update(
+            $this->table_quiz_attempts,
+            $update_data,
+            array('session_id' => $session_id)
+        );
     }
 
     /**
@@ -382,11 +552,11 @@ class AI_Quiz_System_DB {
                 array('id' => $existing)
             );
             
-            aiqs_debug_log('Updated existing answer', [
+            aiqs_debug_log('Updated existing answer', array(
                 'answer_id' => $existing,
                 'question_id' => $question_id,
                 'is_correct' => $is_correct
-            ]);
+            ));
             
             return $existing;
         }
@@ -409,11 +579,11 @@ class AI_Quiz_System_DB {
         }
         
         $answer_id = $wpdb->insert_id;
-        aiqs_debug_log('Recorded new answer', [
+        aiqs_debug_log('Recorded new answer', array(
             'answer_id' => $answer_id,
             'question_id' => $question_id,
             'is_correct' => $is_correct
-        ]);
+        ));
         
         return $answer_id;
     }
@@ -439,15 +609,36 @@ class AI_Quiz_System_DB {
         if ($result === false) {
             aiqs_debug_log('Failed to complete quiz attempt', $wpdb->last_error);
         } else {
-            aiqs_debug_log('Completed quiz attempt', [
+            aiqs_debug_log('Completed quiz attempt', array(
                 'attempt_id' => $attempt_id,
                 'score' => $score,
                 'correct_answers' => $correct_answers,
                 'total_questions' => $total_questions
-            ]);
+            ));
         }
         
         return $result;
+    }
+
+    /**
+     * Save quiz result.
+     */
+    public function save_quiz_result($result_data) {
+        global $wpdb;
+        
+        return $wpdb->insert(
+            $this->table_quiz_attempts,
+            array(
+                'user_id' => $result_data['user_id'],
+                'exam_id' => $result_data['exam_id'],
+                'session_id' => $result_data['session_id'],
+                'score' => $result_data['score'],
+                'total_questions' => $result_data['total_questions'],
+                'correct_answers' => $result_data['correct_answers'],
+                'end_time' => $result_data['completed_at'],
+                'status' => 'completed'
+            )
+        );
     }
 
     /**
@@ -858,7 +1049,7 @@ class AI_Quiz_System_DB {
     }
 
     /**
-     * Get questions count by source for a subject - UTILITY METHOD.
+     * Get questions count by source for a subject.
      */
     public function get_questions_count_by_source($subject_id, $source = 'all') {
         global $wpdb;
@@ -879,241 +1070,12 @@ class AI_Quiz_System_DB {
             );
         }
         
-        aiqs_debug_log('Questions count by source', [
+        aiqs_debug_log('Questions count by source', array(
             'subject_id' => $subject_id,
             'source' => $source,
             'count' => $count
-        ]);
+        ));
         
         return intval($count);
     }
-}/**
-     * Get a single subject by ID.
-     */
-    public function get_subject($id) {
-        global $wpdb;
-        
-        return $wpdb->get_row(
-            $wpdb->prepare("SELECT * FROM {$this->table_subjects} WHERE id = %d", $id)
-        );
-    }
-
-    /**
-     * Get subjects with details (including exam name and question count).
-     */
-    public function get_subjects_with_details($exam_id = null) {
-        global $wpdb;
-        
-        $sql = "SELECT s.*, e.name as exam_name, 
-                COUNT(q.id) as question_count
-                FROM {$this->table_subjects} s
-                LEFT JOIN {$this->table_exams} e ON s.exam_id = e.id
-                LEFT JOIN {$this->table_questions} q ON s.id = q.subject_id
-                WHERE s.status = 'active'";
-        
-        if ($exam_id) {
-            $sql .= $wpdb->prepare(" AND s.exam_id = %d", $exam_id);
-        }
-        
-        $sql .= " GROUP BY s.id ORDER BY e.name, s.name";
-        
-        return $wpdb->get_results($sql);
-    }
-
-    /**
-     * Get a single question by ID.
-     */
-    public function get_question($id) {
-        global $wpdb;
-        
-        return $wpdb->get_row(
-            $wpdb->prepare("SELECT * FROM {$this->table_questions} WHERE id = %d", $id)
-        );
-    }
-
-    /**
-     * Update a question.
-     */
-    public function update_question($question_id, $question_data) {
-        global $wpdb;
-        
-        $question_data['updated_at'] = current_time('mysql');
-        
-        return $wpdb->update(
-            $this->table_questions,
-            $question_data,
-            ['id' => $question_id]
-        );
-    }
-
-    /**
-     * Delete a question.
-     */
-    public function delete_question($question_id) {
-        global $wpdb;
-        
-        return $wpdb->delete(
-            $this->table_questions,
-            ['id' => $question_id]
-        );
-    }
-
-    /**
-     * Create quiz session.
-     */
-    public function create_quiz_session($session_data) {
-        global $wpdb;
-        
-        $result = $wpdb->insert(
-            $this->table_quiz_attempts,
-            [
-                'user_id' => $session_data['user_id'],
-                'exam_id' => $session_data['exam_id'],
-                'session_id' => $session_data['session_id'],
-                'status' => 'ongoing',
-                'start_time' => $session_data['start_time'],
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
-            ]
-        );
-        
-        if ($result) {
-            $attempt_id = $wpdb->insert_id;
-            
-            // Store session data in transient
-            set_transient('aiqs_quiz_' . $session_data['session_id'], $session_data, 3600); // 1 hour
-            
-            return $attempt_id;
-        }
-        
-        return false;
-    }
-
-    /**
-     * Get quiz session.
-     */
-    public function get_quiz_session($session_id) {
-        // Try to get from transient first
-        $session_data = get_transient('aiqs_quiz_' . $session_id);
-        
-        if ($session_data) {
-            return (object) $session_data;
-        }
-        
-        // Fallback to database
-        global $wpdb;
-        
-        return $wpdb->get_row(
-            $wpdb->prepare(
-                "SELECT * FROM {$this->table_quiz_attempts} WHERE session_id = %s",
-                $session_id
-            )
-        );
-    }
-
-    /**
-     * Update quiz session.
-     */
-    public function update_quiz_session($session_id, $update_data) {
-        // Update transient
-        $session_data = get_transient('aiqs_quiz_' . $session_id);
-        if ($session_data) {
-            $session_data = array_merge($session_data, $update_data);
-            set_transient('aiqs_quiz_' . $session_id, $session_data, 3600);
-        }
-        
-        // Update database
-        global $wpdb;
-        
-        return $wpdb->update(
-            $this->table_quiz_attempts,
-            $update_data,
-            ['session_id' => $session_id]
-        );
-    }
-
-    /**
-     * Save quiz result.
-     */
-    public function save_quiz_result($result_data) {
-        global $wpdb;
-        
-        return $wpdb->insert(
-            $this->table_quiz_attempts,
-            [
-                'user_id' => $result_data['user_id'],
-                'exam_id' => $result_data['exam_id'],
-                'session_id' => $result_data['session_id'],
-                'score' => $result_data['score'],
-                'total_questions' => $result_data['total_questions'],
-                'correct_answers' => $result_data['correct_answers'],
-                'end_time' => $result_data['completed_at'],
-                'status' => 'completed'
-            ]
-        );
-    }
-
-    /**
-     * Get user performance data.
-     */
-    public function get_user_performance($user_id, $exam_id = null) {
-        global $wpdb;
-        
-        $sql = "SELECT 
-                    AVG(score) as average_score,
-                    COUNT(*) as total_attempts,
-                    MAX(score) as best_score,
-                    MIN(score) as worst_score,
-                    e.name as exam_name
-                FROM {$this->table_quiz_attempts} a
-                JOIN {$this->table_exams} e ON a.exam_id = e.id
-                WHERE a.user_id = %d AND a.status = 'completed'";
-        
-        $params = [$user_id];
-        
-        if ($exam_id) {
-            $sql .= " AND a.exam_id = %d";
-            $params[] = $exam_id;
-        }
-        
-        $sql .= " GROUP BY a.exam_id";
-        
-        return $wpdb->get_results($wpdb->prepare($sql, $params));
-    }
-
-    /**
-     * Record chatbot interaction.
-     */
-    public function record_chatbot_interaction($user_id, $session_id, $query, $response) {
-        global $wpdb;
-        
-        return $wpdb->insert(
-            $this->table_chatbot_history,
-            [
-                'user_id' => $user_id,
-                'session_id' => $session_id,
-                'query' => $query,
-                'response' => $response,
-                'created_at' => current_time('mysql')
-            ]
-        );
-    }
-
-    /**
-     * Get questions by subject with fallback options.
-     */
-    public function get_questions_by_subject($subject_id, $limit = 10, $difficulty = 'mixed') {
-        global $wpdb;
-        
-        $sql = "SELECT * FROM {$this->table_questions} WHERE subject_id = %d";
-        $params = [$subject_id];
-        
-        if ($difficulty !== 'mixed') {
-            $sql .= " AND difficulty = %s";
-            $params[] = $difficulty;
-        }
-        
-        $sql .= " ORDER BY RAND() LIMIT %d";
-        $params[] = $limit;
-        
-        return $wpdb->get_results($wpdb->prepare($sql, $params));
-    }
+}
