@@ -128,6 +128,15 @@ class AI_Quiz_System {
 		// AJAX handler for getting exam subjects on frontend
         $this->loader->add_action('wp_ajax_aiqs_get_exam_subjects', $plugin_public, 'get_exam_subjects');
         $this->loader->add_action('wp_ajax_nopriv_aiqs_get_exam_subjects', $plugin_public, 'get_exam_subjects');
+	  
+	    // Add these to your define_public_hooks() method (updates plgin 1.2):
+$this->loader->add_action('wp_ajax_aiqs_get_exam_subjects', $plugin_public, 'get_exam_subjects');
+$this->loader->add_action('wp_ajax_nopriv_aiqs_get_exam_subjects', $plugin_public, 'get_exam_subjects');
+$this->loader->add_action('wp_ajax_aiqs_chatbot_query', $plugin_public, 'chatbot_query');
+$this->loader->add_action('wp_ajax_nopriv_aiqs_chatbot_query', $plugin_public, 'chatbot_query');
+$this->loader->add_action('wp_ajax_aiqs_get_conversation_history', $plugin_public, 'get_conversation_history');
+$this->loader->add_action('wp_ajax_aiqs_get_study_recommendations', $plugin_public, 'get_study_recommendations');
+$this->loader->add_action('wp_ajax_aiqs_complete_recommendation', $plugin_public, 'complete_recommendation');
 	}
 
     /**
