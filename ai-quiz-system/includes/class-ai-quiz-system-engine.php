@@ -1,32 +1,16 @@
 <?php
 /**
- * AI Integration for generating questions and providing feedback.
+ * Enhanced AI Engine with Conversational Memory and Personalization
+ * Replace your existing class-ai-quiz-system-engine.php with this enhanced version
  */
+
 class AI_Quiz_System_Engine {
-
-    /**
-     * AI provider (openai or claude)
-     */
     private $provider;
-    
-    /**
-     * API key
-     */
     private $api_key;
-    
-    /**
-     * API endpoint
-     */
     private $endpoint;
-
-    /**
-     * API model
-     */
     private $model;
+    private $db;
     
-    /**
-     * Initialize the class and set properties.
-     */
     public function __construct() {
         $options = get_option('aiqs_ai_settings', []);
         
@@ -41,11 +25,13 @@ class AI_Quiz_System_Engine {
             $this->model = 'claude-3-haiku-20240307';
         }
         
-        aiqs_debug_log('AI Engine initialized with provider: ' . $this->provider);
+        $this->db = new AI_Quiz_System_DB();
+        
+        aiqs_debug_log('Enhanced AI Engine initialized with provider: ' . $this->provider);
     }
     
     /**
-     * Check if AI is configured.
+     * Check if AI is configured
      */
     public function is_configured() {
         $configured = !empty($this->api_key);
@@ -54,7 +40,7 @@ class AI_Quiz_System_Engine {
     }
     
     /**
-     * Test AI connection.
+     * Test AI connection
      */
     public function test_connection() {
         if (!$this->is_configured()) {
@@ -83,9 +69,9 @@ class AI_Quiz_System_Engine {
     }
     
     /**
-     * Send request to AI API.
+     * Enhanced send request with context awareness
      */
-    private function send_request($prompt, $system_prompt = null, $max_tokens = 2000) {
+    private function send_request($prompt, $system_prompt = null, $max_tokens = 2000, $conversation_context = null) {
         if (!$this->is_configured()) {
             return new WP_Error('not_configured', __('AI API key is not configured.', 'ai-quiz-system'));
         }
@@ -100,12 +86,26 @@ class AI_Quiz_System_Engine {
             ];
             
             $messages = [];
+            
+            // Add system prompt
             if ($system_prompt) {
                 $messages[] = [
                     'role' => 'system',
                     'content' => $system_prompt
                 ];
             }
+            
+            // Add conversation context if available
+            if ($conversation_context && !empty($conversation_context)) {
+                foreach ($conversation_context as $context_message) {
+                    $messages[] = [
+                        'role' => $context_message['role'],
+                        'content' => $context_message['content']
+                    ];
+                }
+            }
+            
+            // Add current prompt
             $messages[] = [
                 'role' => 'user',
                 'content' => $prompt
@@ -125,19 +125,32 @@ class AI_Quiz_System_Engine {
                 'anthropic-version' => '2023-06-01'
             ];
             
-            $system = $system_prompt ? $system_prompt : 'You are an expert educational quiz system helping to generate questions for students in Nigeria and Africa.';
+            $system = $system_prompt ? $system_prompt : 'You are Rita, an expert AI tutor for Nigerian/African students. You are warm, encouraging, culturally aware, and provide personalized educational guidance.';
+            
+            $messages = [];
+            
+            // Add conversation context if available
+            if ($conversation_context && !empty($conversation_context)) {
+                foreach ($conversation_context as $context_message) {
+                    $messages[] = [
+                        'role' => $context_message['role'],
+                        'content' => $context_message['content']
+                    ];
+                }
+            }
+            
+            // Add current prompt
+            $messages[] = [
+                'role' => 'user',
+                'content' => $prompt
+            ];
             
             $body = [
                 'model' => $this->model,
                 'max_tokens' => $max_tokens,
                 'temperature' => 0.7,
                 'system' => $system,
-                'messages' => [
-                    [
-                        'role' => 'user',
-                        'content' => $prompt
-                    ]
-                ]
+                'messages' => $messages
             ];
         }
         
@@ -155,7 +168,7 @@ class AI_Quiz_System_Engine {
         aiqs_debug_log('AI API Request', [
             'provider' => $this->provider,
             'endpoint' => $this->endpoint,
-            'body' => $body
+            'messages_count' => count($messages ?? [])
         ]);
         
         $response = wp_remote_post($this->endpoint, $args);
@@ -167,11 +180,6 @@ class AI_Quiz_System_Engine {
         
         $status_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
-        
-        aiqs_debug_log('AI API Response', [
-            'status' => $status_code,
-            'body_excerpt' => substr($body, 0, 500) . '...'
-        ]);
         
         if ($status_code !== 200) {
             aiqs_debug_log('AI API Error Response', [
@@ -196,7 +204,6 @@ class AI_Quiz_System_Engine {
                 aiqs_debug_log('OpenAI Error', $data['error']);
                 return new WP_Error('openai_error', $data['error']['message'] ?? __('Unknown OpenAI error', 'ai-quiz-system'));
             } else {
-                aiqs_debug_log('OpenAI Unexpected Structure', json_encode($data));
                 return new WP_Error('openai_format_error', __('Unexpected response format from OpenAI.', 'ai-quiz-system'));
             }
         } else {
@@ -209,14 +216,809 @@ class AI_Quiz_System_Engine {
                 aiqs_debug_log('Claude Error', $data['error']);
                 return new WP_Error('claude_error', $data['error']['message'] ?? __('Unknown Claude AI error', 'ai-quiz-system'));
             } else {
-                aiqs_debug_log('Claude Unexpected Structure', json_encode($data));
                 return new WP_Error('claude_format_error', __('Unexpected response format from Claude AI.', 'ai-quiz-system'));
             }
         }
     }
     
     /**
-     * Generate questions for a subject with improved error handling.
+     * Enhanced conversational AI with memory and personalization
+     */
+    public function process_conversational_query($query, $user_id = null, $session_id = null, $context = []) {
+        aiqs_debug_log('Processing conversational query', [
+            'user_id' => $user_id,
+            'session_id' => $session_id,
+            'query_length' => strlen($query)
+        ]);
+        
+        if (!$this->is_configured()) {
+            return $this->generate_fallback_response($query);
+        }
+        
+        // Get or create student profile
+        $student_profile = $this->get_or_create_student_profile($user_id);
+        
+        // Get or create conversation
+        $conversation = $this->get_or_create_conversation($user_id, $session_id);
+        
+        // Get conversation history (last 10 messages for context)
+        $conversation_history = $this->get_conversation_history($conversation['id'], 10);
+        
+        // Get recent performance data
+        $performance_data = $this->get_student_performance_summary($user_id);
+        
+        // Detect emotion/mood from query
+        $emotion = $this->detect_emotion($query);
+        
+        // Extract topics from query
+        $topics = $this->extract_topics($query);
+        
+        // Build comprehensive context
+        $full_context = $this->build_conversation_context([
+            'student_profile' => $student_profile,
+            'conversation_history' => $conversation_history,
+            'performance_data' => $performance_data,
+            'current_emotion' => $emotion,
+            'topics' => $topics,
+            'additional_context' => $context
+        ]);
+        
+        // Create personalized system prompt
+        $system_prompt = $this->create_personalized_system_prompt($student_profile, $performance_data);
+        
+        // Prepare conversation context for AI
+        $ai_conversation_context = $this->prepare_ai_context($conversation_history);
+        
+        // Send request to AI with full context
+        $ai_response = $this->send_request(
+            $query,
+            $system_prompt,
+            1500, // max tokens
+            $ai_conversation_context
+        );
+        
+        if (is_wp_error($ai_response)) {
+            $ai_response = $this->generate_fallback_response($query);
+        }
+        
+        // Analyze response quality and extract insights
+        $response_analysis = $this->analyze_response($query, $ai_response, $full_context);
+        
+        // Store the conversation message
+        $message_id = $this->store_conversation_message([
+            'conversation_id' => $conversation['id'],
+            'user_id' => $user_id,
+            'user_message' => $query,
+            'ai_response' => $ai_response,
+            'context_data' => json_encode($full_context),
+            'emotion_detected' => $emotion,
+            'topics_mentioned' => json_encode($topics),
+            'response_analysis' => json_encode($response_analysis)
+        ]);
+        
+        // Update conversation metadata
+        $this->update_conversation_metadata($conversation['id'], [
+            'last_message_at' => current_time('mysql'),
+            'message_count' => $conversation['message_count'] + 1,
+            'mood_detected' => $emotion,
+            'topics_covered' => $this->merge_topics($conversation['topics_covered'], $topics)
+        ]);
+        
+        // Update student profile based on interaction
+        $this->update_student_profile($user_id, $query, $ai_response, $topics, $emotion);
+        
+        // Generate study recommendations if appropriate
+        $this->generate_study_recommendations($user_id, $topics, $performance_data, $emotion);
+        
+        // Log learning analytics
+        $this->log_learning_analytics($user_id, [
+            'activity_type' => 'chatbot_conversation',
+            'conversation_id' => $conversation['id'],
+            'topics' => $topics,
+            'emotion' => $emotion,
+            'response_quality' => $response_analysis['quality_score'] ?? 0.5
+        ]);
+        
+        return [
+            'success' => true,
+            'response' => $ai_response,
+            'conversation_id' => $conversation['id'],
+            'message_id' => $message_id,
+            'student_insights' => $this->get_student_insights($user_id),
+            'recommendations' => $this->get_recent_recommendations($user_id, 3)
+        ];
+    }
+    
+    /**
+     * Get or create student profile
+     */
+    private function get_or_create_student_profile($user_id) {
+        if (!$user_id) {
+            return $this->get_default_profile();
+        }
+        
+        global $wpdb;
+        
+        $profile = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}aiqs_student_profiles WHERE user_id = %d",
+                $user_id
+            ),
+            ARRAY_A
+        );
+        
+        if (!$profile) {
+            // Create new profile
+            $user_data = get_userdata($user_id);
+            $profile_data = [
+                'user_id' => $user_id,
+                'learning_style' => 'mixed',
+                'strong_subjects' => json_encode([]),
+                'weak_subjects' => json_encode([]),
+                'preferred_difficulty' => 'medium',
+                'study_goals' => '',
+                'personality_traits' => json_encode(['curious', 'motivated']),
+                'communication_style' => 'friendly',
+                'total_conversations' => 0,
+                'average_session_length' => 0
+            ];
+            
+            $wpdb->insert($wpdb->prefix . 'aiqs_student_profiles', $profile_data);
+            $profile = $profile_data;
+            $profile['id'] = $wpdb->insert_id;
+        }
+        
+        return $profile;
+    }
+    
+    /**
+     * Get or create conversation
+     */
+    private function get_or_create_conversation($user_id, $session_id) {
+        global $wpdb;
+        
+        // Try to find existing active conversation
+        $conversation = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}aiqs_conversations 
+                 WHERE (user_id = %d OR session_id = %s) 
+                 AND status = 'active' 
+                 AND last_message_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                 ORDER BY last_message_at DESC LIMIT 1",
+                $user_id ?: 0, $session_id
+            ),
+            ARRAY_A
+        );
+        
+        if (!$conversation) {
+            // Create new conversation
+            $conversation_data = [
+                'user_id' => $user_id,
+                'session_id' => $session_id,
+                'conversation_title' => $this->generate_conversation_title(),
+                'message_count' => 0,
+                'learning_context' => json_encode([]),
+                'topics_covered' => json_encode([]),
+                'status' => 'active'
+            ];
+            
+            $wpdb->insert($wpdb->prefix . 'aiqs_conversations', $conversation_data);
+            $conversation = $conversation_data;
+            $conversation['id'] = $wpdb->insert_id;
+        }
+        
+        return $conversation;
+    }
+    
+    /**
+     * Get conversation history
+     */
+    private function get_conversation_history($conversation_id, $limit = 10) {
+        global $wpdb;
+        
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT user_message, ai_response, emotion_detected, topics_mentioned, timestamp
+                 FROM {$wpdb->prefix}aiqs_conversation_messages 
+                 WHERE conversation_id = %d 
+                 ORDER BY timestamp DESC LIMIT %d",
+                $conversation_id, $limit
+            ),
+            ARRAY_A
+        );
+    }
+    
+    /**
+     * Get student performance summary
+     */
+    private function get_student_performance_summary($user_id) {
+        if (!$user_id) {
+            return [];
+        }
+        
+        global $wpdb;
+        
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT s.name as subject_name, p.average_score, p.improvement_trend, 
+                        p.strengths, p.weaknesses, p.total_attempts
+                 FROM {$wpdb->prefix}aiqs_quiz_performance p
+                 JOIN {$wpdb->prefix}aiqs_subjects s ON p.subject_id = s.id
+                 WHERE p.user_id = %d AND p.total_attempts > 0
+                 ORDER BY p.updated_at DESC LIMIT 10",
+                $user_id
+            ),
+            ARRAY_A
+        );
+    }
+    
+    /**
+     * Detect emotion from text
+     */
+    private function detect_emotion($text) {
+        $text_lower = strtolower($text);
+        
+        $emotion_patterns = [
+            'frustrated' => ['frustrated', 'angry', 'annoyed', 'difficult', 'hard', 'confused', 'stuck'],
+            'excited' => ['excited', 'great', 'awesome', 'amazing', 'love', 'fantastic', 'wonderful'],
+            'worried' => ['worried', 'anxious', 'nervous', 'scared', 'afraid', 'concerned'],
+            'confident' => ['confident', 'ready', 'prepared', 'easy', 'understand', 'got it'],
+            'curious' => ['how', 'why', 'what', 'explain', 'tell me', 'interested'],
+            'tired' => ['tired', 'exhausted', 'sleepy', 'worn out', 'drained']
+        ];
+        
+        foreach ($emotion_patterns as $emotion => $patterns) {
+            foreach ($patterns as $pattern) {
+                if (strpos($text_lower, $pattern) !== false) {
+                    return $emotion;
+                }
+            }
+        }
+        
+        return 'neutral';
+    }
+    
+    /**
+     * Extract topics from text
+     */
+    private function extract_topics($text) {
+        $text_lower = strtolower($text);
+        $topics = [];
+        
+        $subject_patterns = [
+            'mathematics' => ['math', 'mathematics', 'algebra', 'geometry', 'calculus', 'numbers'],
+            'english' => ['english', 'grammar', 'writing', 'reading', 'literature', 'essay'],
+            'physics' => ['physics', 'motion', 'force', 'energy', 'waves', 'electricity'],
+            'chemistry' => ['chemistry', 'atoms', 'molecules', 'reactions', 'elements'],
+            'biology' => ['biology', 'cells', 'genetics', 'evolution', 'anatomy', 'plants', 'animals'],
+            'geography' => ['geography', 'maps', 'countries', 'climate', 'rivers', 'mountains'],
+            'history' => ['history', 'past', 'ancient', 'war', 'civilization', 'timeline'],
+            'economics' => ['economics', 'money', 'market', 'business', 'trade', 'finance']
+        ];
+        
+        foreach ($subject_patterns as $subject => $patterns) {
+            foreach ($patterns as $pattern) {
+                if (strpos($text_lower, $pattern) !== false) {
+                    $topics[] = $subject;
+                    break;
+                }
+            }
+        }
+        
+        // Add study-related topics
+        $study_patterns = [
+            'study_methods' => ['study', 'learn', 'memorize', 'practice', 'review'],
+            'exam_prep' => ['exam', 'test', 'quiz', 'preparation', 'waec', 'utme', 'neco'],
+            'time_management' => ['time', 'schedule', 'plan', 'organize', 'manage'],
+            'motivation' => ['motivation', 'inspire', 'encourage', 'goal', 'achieve']
+        ];
+        
+        foreach ($study_patterns as $topic => $patterns) {
+            foreach ($patterns as $pattern) {
+                if (strpos($text_lower, $pattern) !== false) {
+                    $topics[] = $topic;
+                    break;
+                }
+            }
+        }
+        
+        return array_unique($topics);
+    }
+    
+    /**
+     * Build comprehensive conversation context
+     */
+    private function build_conversation_context($data) {
+        return [
+            'student_profile' => $data['student_profile'],
+            'recent_performance' => $data['performance_data'],
+            'conversation_history_count' => count($data['conversation_history']),
+            'current_emotion' => $data['current_emotion'],
+            'topics_discussed' => $data['topics'],
+            'learning_context' => $data['additional_context'],
+            'timestamp' => current_time('mysql')
+        ];
+    }
+    
+    /**
+     * Create personalized system prompt
+     */
+    private function create_personalized_system_prompt($profile, $performance_data) {
+        $user_name = '';
+        if ($profile['user_id']) {
+            $user = get_userdata($profile['user_id']);
+            $user_name = $user ? $user->display_name : '';
+        }
+        
+        $system_prompt = "You are Rita, an AI tutor specifically designed for Nigerian and African students. You are warm, encouraging, culturally aware, and provide personalized educational guidance.\n\n";
+        
+        // Add student-specific context
+        if ($user_name) {
+            $system_prompt .= "You are currently helping {$user_name}. ";
+        }
+        
+        // Add learning style information
+        $system_prompt .= "Student's learning style: {$profile['learning_style']}. ";
+        $system_prompt .= "Preferred difficulty: {$profile['preferred_difficulty']}. ";
+        $system_prompt .= "Communication style: {$profile['communication_style']}. ";
+        
+        // Add performance context
+        if (!empty($performance_data)) {
+            $strong_subjects = [];
+            $weak_subjects = [];
+            
+            foreach ($performance_data as $subject) {
+                if ($subject['average_score'] >= 75) {
+                    $strong_subjects[] = $subject['subject_name'];
+                } elseif ($subject['average_score'] < 50) {
+                    $weak_subjects[] = $subject['subject_name'];
+                }
+            }
+            
+            if (!empty($strong_subjects)) {
+                $system_prompt .= "Student shows strength in: " . implode(', ', $strong_subjects) . ". ";
+            }
+            
+            if (!empty($weak_subjects)) {
+                $system_prompt .= "Student needs support in: " . implode(', ', $weak_subjects) . ". ";
+            }
+        }
+        
+        $system_prompt .= "\n\nAlways:\n";
+        $system_prompt .= "- Be encouraging and supportive\n";
+        $system_prompt .= "- Use examples relevant to Nigerian/African context\n";
+        $system_prompt .= "- Provide practical study tips\n";
+        $system_prompt .= "- Break down complex concepts into simple steps\n";
+        $system_prompt .= "- Ask follow-up questions to ensure understanding\n";
+        $system_prompt .= "- Celebrate progress and achievements\n";
+        $system_prompt .= "- Be patient and understanding of learning challenges\n";
+        $system_prompt .= "- Keep responses concise but informative (under 200 words usually)\n";
+        
+        return $system_prompt;
+    }
+    
+    /**
+     * Prepare AI conversation context
+     */
+    private function prepare_ai_context($conversation_history) {
+        $context = [];
+        
+        // Convert conversation history to AI format (reverse order for chronological)
+        $history = array_reverse($conversation_history);
+        
+        foreach ($history as $message) {
+            if (!empty($message['user_message'])) {
+                $context[] = [
+                    'role' => 'user',
+                    'content' => $message['user_message']
+                ];
+            }
+            
+            if (!empty($message['ai_response'])) {
+                $context[] = [
+                    'role' => 'assistant',
+                    'content' => $message['ai_response']
+                ];
+            }
+        }
+        
+        return $context;
+    }
+    
+    /**
+     * Analyze response quality and extract insights
+     */
+    private function analyze_response($query, $response, $context) {
+        $analysis = [
+            'quality_score' => 0.7, // Default score
+            'topics_addressed' => [],
+            'emotion_appropriate' => true,
+            'personalization_level' => 'medium',
+            'educational_value' => 'high'
+        ];
+        
+        // Simple quality metrics
+        $response_length = strlen($response);
+        if ($response_length > 50 && $response_length < 500) {
+            $analysis['quality_score'] += 0.2;
+        }
+        
+        // Check if response addresses detected emotion
+        $emotion = $context['current_emotion'] ?? 'neutral';
+        if ($emotion === 'frustrated' && (stripos($response, 'understand') !== false || stripos($response, 'help') !== false)) {
+            $analysis['emotion_appropriate'] = true;
+            $analysis['quality_score'] += 0.1;
+        }
+        
+        return $analysis;
+    }
+    
+    /**
+     * Store conversation message
+     */
+    private function store_conversation_message($data) {
+        global $wpdb;
+        
+        $result = $wpdb->insert(
+            $wpdb->prefix . 'aiqs_conversation_messages',
+            [
+                'conversation_id' => $data['conversation_id'],
+                'user_id' => $data['user_id'],
+                'message_type' => 'user',
+                'user_message' => $data['user_message'],
+                'ai_response' => $data['ai_response'],
+                'context_data' => $data['context_data'],
+                'emotion_detected' => $data['emotion_detected'],
+                'topics_mentioned' => $data['topics_mentioned']
+            ]
+        );
+        
+        return $result ? $wpdb->insert_id : false;
+    }
+    
+    /**
+     * Update conversation metadata
+     */
+    private function update_conversation_metadata($conversation_id, $updates) {
+        global $wpdb;
+        
+        return $wpdb->update(
+            $wpdb->prefix . 'aiqs_conversations',
+            $updates,
+            ['id' => $conversation_id]
+        );
+    }
+    
+    /**
+     * Update student profile based on interaction
+     */
+    private function update_student_profile($user_id, $query, $response, $topics, $emotion) {
+        if (!$user_id) return;
+        
+        global $wpdb;
+        
+        // Get current profile
+        $profile = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}aiqs_student_profiles WHERE user_id = %d",
+                $user_id
+            ),
+            ARRAY_A
+        );
+        
+        if (!$profile) return;
+        
+        // Update conversation count and last activity
+        $updates = [
+            'total_conversations' => $profile['total_conversations'] + 1,
+            'last_activity' => current_time('mysql')
+        ];
+        
+        // Update personality traits based on detected emotion patterns
+        $personality_traits = json_decode($profile['personality_traits'], true) ?: [];
+        
+        if ($emotion === 'curious' && !in_array('curious', $personality_traits)) {
+            $personality_traits[] = 'curious';
+        } elseif ($emotion === 'confident' && !in_array('confident', $personality_traits)) {
+            $personality_traits[] = 'confident';
+        }
+        
+        $updates['personality_traits'] = json_encode(array_unique($personality_traits));
+        
+        $wpdb->update(
+            $wpdb->prefix . 'aiqs_student_profiles',
+            $updates,
+            ['user_id' => $user_id]
+        );
+    }
+    
+    /**
+     * Generate study recommendations
+     */
+    private function generate_study_recommendations($user_id, $topics, $performance_data, $emotion) {
+        if (!$user_id || empty($topics)) return;
+        
+        global $wpdb;
+        
+        foreach ($topics as $topic) {
+            // Check if we have performance data for this topic
+            $needs_help = false;
+            foreach ($performance_data as $subject) {
+                if (stripos($subject['subject_name'], $topic) !== false && $subject['average_score'] < 60) {
+                    $needs_help = true;
+                    break;
+                }
+            }
+            
+            if ($needs_help || $emotion === 'frustrated' || $emotion === 'worried') {
+                $recommendation = $this->create_study_recommendation($topic, $emotion, $performance_data);
+                
+                if ($recommendation) {
+                    // Check if similar recommendation already exists
+                    $existing = $wpdb->get_var(
+                        $wpdb->prepare(
+                            "SELECT id FROM {$wpdb->prefix}aiqs_study_recommendations 
+                             WHERE user_id = %d AND recommendation_type = %s 
+                             AND status = 'pending' AND generated_date > DATE_SUB(NOW(), INTERVAL 7 DAY)",
+                            $user_id, $topic
+                        )
+                    );
+                    
+                    if (!$existing) {
+                        $wpdb->insert(
+                            $wpdb->prefix . 'aiqs_study_recommendations',
+                            [
+                                'user_id' => $user_id,
+                                'recommendation_type' => $topic,
+                                'recommendation_text' => $recommendation['text'],
+                                'priority_level' => $recommendation['priority'],
+                                'status' => 'pending',
+                                'generated_by' => 'ai_conversation',
+                                'expires_at' => date('Y-m-d H:i:s', strtotime('+30 days'))
+                            ]
+                        );
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Create study recommendation
+     */
+    private function create_study_recommendation($topic, $emotion, $performance_data) {
+        $recommendations = [
+            'mathematics' => [
+                'text' => 'Practice daily math problems, starting with basic concepts. Use visual aids and real-world examples to understand abstract concepts better.',
+                'priority' => 'high'
+            ],
+            'english' => [
+                'text' => 'Read Nigerian literature and practice writing essays. Focus on grammar rules and expand vocabulary through daily reading.',
+                'priority' => 'high'
+            ],
+            'study_methods' => [
+                'text' => 'Try the Pomodoro technique: Study for 25 minutes, then take a 5-minute break. Create a quiet study space and remove distractions.',
+                'priority' => 'medium'
+            ],
+            'exam_prep' => [
+                'text' => 'Create a study timetable leading up to your exam. Practice with past questions and time yourself to improve speed and accuracy.',
+                'priority' => 'high'
+            ]
+        ];
+        
+        if (isset($recommendations[$topic])) {
+            $rec = $recommendations[$topic];
+            
+            // Adjust priority based on emotion
+            if ($emotion === 'frustrated' || $emotion === 'worried') {
+                $rec['priority'] = 'high';
+            }
+            
+            return $rec;
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Log learning analytics
+     */
+    private function log_learning_analytics($user_id, $data) {
+        if (!$user_id) return;
+        
+        global $wpdb;
+        
+        $analytics_data = [
+            'user_id' => $user_id,
+            'session_date' => current_time('Y-m-d'),
+            'activity_type' => $data['activity_type'],
+            'subject_focus' => !empty($data['topics']) ? implode(',', $data['topics']) : null,
+            'time_spent' => 5, // Estimate conversation time
+            'conversation_quality_score' => $data['response_quality'] ?? 0.5,
+            'engagement_level' => $this->calculate_engagement_level($data['emotion'] ?? 'neutral'),
+            'insights' => json_encode([
+                'emotion_detected' => $data['emotion'] ?? 'neutral',
+                'topics_discussed' => $data['topics'] ?? [],
+                'conversation_id' => $data['conversation_id'] ?? null
+            ])
+        ];
+        
+        // Check if entry exists for today
+        $existing = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT id FROM {$wpdb->prefix}aiqs_learning_analytics 
+                 WHERE user_id = %d AND session_date = %s AND activity_type = %s",
+                $user_id, current_time('Y-m-d'), $data['activity_type']
+            )
+        );
+        
+        if ($existing) {
+            // Update existing entry
+            $wpdb->update(
+                $wpdb->prefix . 'aiqs_learning_analytics',
+                [
+                    'time_spent' => 'time_spent + 5',
+                    'conversation_quality_score' => $analytics_data['conversation_quality_score'],
+                    'engagement_level' => $analytics_data['engagement_level']
+                ],
+                ['id' => $existing]
+            );
+        } else {
+            // Create new entry
+            $wpdb->insert($wpdb->prefix . 'aiqs_learning_analytics', $analytics_data);
+        }
+    }
+    
+    /**
+     * Calculate engagement level
+     */
+    private function calculate_engagement_level($emotion) {
+        $engagement_map = [
+            'excited' => 'high',
+            'curious' => 'high',
+            'confident' => 'high',
+            'frustrated' => 'medium',
+            'worried' => 'medium',
+            'tired' => 'low',
+            'neutral' => 'medium'
+        ];
+        
+        return $engagement_map[$emotion] ?? 'medium';
+    }
+    
+    /**
+     * Get student insights
+     */
+    private function get_student_insights($user_id) {
+        if (!$user_id) return [];
+        
+        global $wpdb;
+        
+        $insights = [];
+        
+        // Get recent learning trends
+        $recent_analytics = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}aiqs_learning_analytics 
+                 WHERE user_id = %d AND session_date > DATE_SUB(NOW(), INTERVAL 7 DAY)
+                 ORDER BY session_date DESC",
+                $user_id
+            ),
+            ARRAY_A
+        );
+        
+        if (!empty($recent_analytics)) {
+            $total_time = array_sum(array_column($recent_analytics, 'time_spent'));
+            $avg_engagement = array_sum(array_map(function($a) {
+                return $a['engagement_level'] === 'high' ? 3 : ($a['engagement_level'] === 'medium' ? 2 : 1);
+            }, $recent_analytics)) / count($recent_analytics);
+            
+            $insights['weekly_study_time'] = $total_time;
+            $insights['engagement_level'] = $avg_engagement > 2.5 ? 'high' : ($avg_engagement > 1.5 ? 'medium' : 'low');
+            $insights['active_days'] = count($recent_analytics);
+        }
+        
+        return $insights;
+    }
+    
+    /**
+     * Get recent recommendations
+     */
+    private function get_recent_recommendations($user_id, $limit = 3) {
+        if (!$user_id) return [];
+        
+        global $wpdb;
+        
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT recommendation_text, priority_level, recommendation_type, generated_date
+                 FROM {$wpdb->prefix}aiqs_study_recommendations 
+                 WHERE user_id = %d AND status = 'pending'
+                 ORDER BY priority_level = 'high' DESC, generated_date DESC 
+                 LIMIT %d",
+                $user_id, $limit
+            ),
+            ARRAY_A
+        );
+    }
+    
+    /**
+     * Generate fallback response
+     */
+    private function generate_fallback_response($query) {
+        $query_lower = strtolower($query);
+        
+        // Enhanced fallback responses
+        if (strpos($query_lower, 'hello') !== false || strpos($query_lower, 'hi') !== false) {
+            return "Hello! I'm Rita, your AI study assistant. I'm here to help you with your studies. What subject would you like to work on today?";
+        }
+        
+        if (strpos($query_lower, 'help') !== false) {
+            return "I'm here to help! I can assist you with:\n• Understanding difficult concepts\n• Study tips and techniques\n• Exam preparation strategies\n• Subject-specific guidance\n• Motivation and encouragement\n\nWhat would you like to explore?";
+        }
+        
+        if (strpos($query_lower, 'math') !== false) {
+            return "Mathematics can be challenging, but with the right approach, it becomes much easier! Try breaking problems into smaller steps, practice regularly, and don't hesitate to ask for help. What specific math topic are you working on?";
+        }
+        
+        if (strpos($query_lower, 'english') !== false) {
+            return "English language skills improve with consistent practice! Focus on reading different types of texts, practice writing regularly, and pay attention to grammar. Reading Nigerian authors can also help you connect with the language. What aspect of English would you like to improve?";
+        }
+        
+        if (strpos($query_lower, 'exam') !== false || strpos($query_lower, 'test') !== false) {
+            return "Exam preparation is key to success! Create a study schedule, practice with past questions, get enough rest, and stay confident. Remember, preparation reduces anxiety. Which exam are you preparing for?";
+        }
+        
+        // Default response
+        return "I understand you're looking for help with your studies. While I have limited capabilities right now, I'm here to support your learning journey. Could you tell me more specifically what you'd like to work on? I'll do my best to guide you!";
+    }
+    
+    /**
+     * Generate conversation title
+     */
+    private function generate_conversation_title() {
+        $titles = [
+            'Study Session',
+            'Learning Chat',
+            'Academic Discussion',
+            'Study Help',
+            'Learning Support',
+            'Educational Guidance'
+        ];
+        
+        return $titles[array_rand($titles)] . ' - ' . date('M j, Y');
+    }
+    
+    /**
+     * Get default profile for guest users
+     */
+    private function get_default_profile() {
+        return [
+            'id' => 0,
+            'user_id' => null,
+            'learning_style' => 'mixed',
+            'strong_subjects' => json_encode([]),
+            'weak_subjects' => json_encode([]),
+            'preferred_difficulty' => 'medium',
+            'study_goals' => '',
+            'personality_traits' => json_encode(['curious']),
+            'communication_style' => 'friendly',
+            'total_conversations' => 0,
+            'average_session_length' => 0
+        ];
+    }
+    
+    /**
+     * Merge topics arrays
+     */
+    private function merge_topics($existing_topics_json, $new_topics) {
+        $existing_topics = json_decode($existing_topics_json, true) ?: [];
+        $merged = array_unique(array_merge($existing_topics, $new_topics));
+        return json_encode($merged);
+    }
+    
+    /**
+     * Enhanced question generation with better error handling and fallbacks
      */
     public function generate_questions($subject, $count = 5, $difficulty = 'mixed') {
         aiqs_debug_log('Generating questions', [
@@ -279,11 +1081,6 @@ Make sure the JSON is valid and properly formatted. Do not include any text befo
                 return $this->generate_demo_questions($subject, $count, $difficulty);
             }
             
-            aiqs_debug_log('AI Response received', [
-                'length' => strlen($response),
-                'preview' => substr($response, 0, 200) . (strlen($response) > 200 ? '...' : '')
-            ]);
-            
             // Clean up response to extract JSON
             $response = preg_replace('/```(?:json)?(.*?)```/s', '$1', $response);
             
@@ -320,15 +1117,9 @@ Make sure the JSON is valid and properly formatted. Do not include any text befo
                 }
             }
             
-            // Make sure $questions is an array
-            if (!is_array($questions)) {
-                aiqs_debug_log('Questions is not an array');
-                return $this->generate_demo_questions($subject, $count, $difficulty);
-            }
-            
             // Validate questions format
             $valid_questions = [];
-            foreach ($questions as $key => $question) {
+            foreach ($questions as $question) {
                 if (!is_array($question)) {
                     continue;
                 }
@@ -344,7 +1135,7 @@ Make sure the JSON is valid and properly formatted. Do not include any text befo
                     }
                 }
                 
-                // Ensure correct_answer is a valid option (A, B, C, D)
+                // Ensure correct_answer is valid
                 if (!in_array($question['correct_answer'], ['A', 'B', 'C', 'D'])) {
                     $answer = strtoupper(trim($question['correct_answer']));
                     if (in_array($answer, ['A', 'B', 'C', 'D'])) {
@@ -358,7 +1149,7 @@ Make sure the JSON is valid and properly formatted. Do not include any text befo
                 $valid_questions[] = $question;
             }
             
-            // If we don't have enough valid questions, generate some demo ones to fill the gap
+            // Fill gap with demo questions if needed
             if (count($valid_questions) < $count) {
                 $missing_count = $count - count($valid_questions);
                 aiqs_debug_log("Not enough valid questions, adding $missing_count demo questions");
@@ -381,26 +1172,7 @@ Make sure the JSON is valid and properly formatted. Do not include any text befo
     }
     
     /**
-     * Try to fix common JSON issues
-     */
-    private function fix_json_content($content) {
-        // Replace single quotes with double quotes
-        $content = str_replace("'", '"', $content);
-        
-        // Fix missing quotes around keys
-        $content = preg_replace('/([{,])\s*([a-zA-Z0-9_]+)\s*:/', '$1"$2":', $content);
-        
-        // Remove trailing commas in arrays and objects
-        $content = preg_replace('/,\s*(\}|\])/', '$1', $content);
-        
-        // Convert None/null/undefined values to empty strings
-        $content = preg_replace('/"[^"]+"\s*:\s*(null|None|undefined)/', '"$1": ""', $content);
-        
-        return $content;
-    }
-    
-    /**
-     * Generate demo questions as a fallback - FIXED to handle all subjects.
+     * Generate demo questions as fallback
      */
     public function generate_demo_questions($subject, $count, $difficulty) {
         aiqs_debug_log("Generating $count demo questions for $subject with $difficulty difficulty");
@@ -411,34 +1183,30 @@ Make sure the JSON is valid and properly formatted. Do not include any text befo
         // Get subject-specific questions first
         $subject_specific_questions = $this->get_subject_specific_questions($subject);
         
-        // If we have subject-specific questions, use those primarily
         if (!empty($subject_specific_questions)) {
             $templates = $subject_specific_questions;
             
-            // Add some generic ones if we need more
+            // Add generic ones if needed
             if (count($templates) < $count) {
                 $generic_templates = $this->get_generic_templates($subject);
                 $templates = array_merge($templates, $generic_templates);
             }
         } else {
-            // Fall back to generic templates with subject replacement
             $templates = $this->get_generic_templates($subject);
         }
         
-        // Select random templates up to the requested count
-        if (count($templates) <= $count) {
-            $selected_indices = range(0, count($templates) - 1);
-        } else {
-            $selected_indices = array_rand($templates, $count);
-            if (!is_array($selected_indices)) {
-                $selected_indices = [$selected_indices];
-            }
+        // Select questions up to requested count
+        $selected_count = min($count, count($templates));
+        $selected_indices = array_rand($templates, $selected_count);
+        
+        if (!is_array($selected_indices)) {
+            $selected_indices = [$selected_indices];
         }
         
         foreach ($selected_indices as $index) {
             $template = $templates[$index];
             
-            // Replace {subject} placeholder with actual subject
+            // Replace {subject} placeholder
             foreach ($template as $key => $value) {
                 $template[$key] = str_replace('{subject}', $subject, $value);
             }
@@ -451,13 +1219,10 @@ Make sure the JSON is valid and properly formatted. Do not include any text befo
             $demo_questions[] = $template;
         }
         
-        // If we need more questions, repeat some with variations
+        // Repeat questions if we need more
         while (count($demo_questions) < $count) {
             $template = $templates[array_rand($templates)];
             
-            $template['question'] = "Regarding " . $subject . ": " . $template['question'];
-            
-            // Replace {subject} placeholder
             foreach ($template as $key => $value) {
                 $template[$key] = str_replace('{subject}', $subject, $value);
             }
@@ -469,21 +1234,17 @@ Make sure the JSON is valid and properly formatted. Do not include any text befo
             $demo_questions[] = $template;
         }
         
-        aiqs_debug_log('Demo questions generated', ['count' => count($demo_questions)]);
-        
-        return $demo_questions;
+        return array_slice($demo_questions, 0, $count);
     }
     
     /**
-     * Get subject-specific question templates.
+     * Get subject-specific question templates
      */
     private function get_subject_specific_questions($subject) {
         $subject_lower = strtolower($subject);
-        $questions = [];
         
-        // Mathematics questions
-        if (strpos($subject_lower, 'math') !== false || strpos($subject_lower, 'arithmetic') !== false || strpos($subject_lower, 'algebra') !== false) {
-            $questions = [
+        if (strpos($subject_lower, 'math') !== false) {
+            return [
                 [
                     'question' => 'What is 15 + 27?',
                     'option_a' => '42',
@@ -503,23 +1264,12 @@ Make sure the JSON is valid and properly formatted. Do not include any text befo
                     'correct_answer' => 'C',
                     'explanation' => 'The square root of 64 is 8 because 8 × 8 = 64',
                     'difficulty' => 'medium'
-                ],
-                [
-                    'question' => 'If 3x + 5 = 20, what is the value of x?',
-                    'option_a' => '4',
-                    'option_b' => '5',
-                    'option_c' => '6',
-                    'option_d' => '7',
-                    'correct_answer' => 'B',
-                    'explanation' => '3x + 5 = 20, so 3x = 15, therefore x = 5',
-                    'difficulty' => 'medium'
                 ]
             ];
         }
         
-        // English questions
-        elseif (strpos($subject_lower, 'english') !== false || strpos($subject_lower, 'language') !== false) {
-            $questions = [
+        if (strpos($subject_lower, 'english') !== false) {
+            return [
                 [
                     'question' => 'Which of the following is a noun?',
                     'option_a' => 'Run',
@@ -539,113 +1289,16 @@ Make sure the JSON is valid and properly formatted. Do not include any text befo
                     'correct_answer' => 'D',
                     'explanation' => 'The past tense of "go" is "went".',
                     'difficulty' => 'easy'
-                ],
-                [
-                    'question' => 'Which sentence is grammatically correct?',
-                    'option_a' => 'Me and John went to the store',
-                    'option_b' => 'John and I went to the store',
-                    'option_c' => 'John and me went to the store',
-                    'option_d' => 'I and John went to the store',
-                    'correct_answer' => 'B',
-                    'explanation' => 'When using compound subjects, use "I" not "me", and put yourself second.',
-                    'difficulty' => 'medium'
                 ]
             ];
         }
         
-        // Science questions
-        elseif (strpos($subject_lower, 'science') !== false || strpos($subject_lower, 'biology') !== false || strpos($subject_lower, 'chemistry') !== false || strpos($subject_lower, 'physics') !== false) {
-            $questions = [
-                [
-                    'question' => 'What is the chemical symbol for water?',
-                    'option_a' => 'H2O',
-                    'option_b' => 'CO2',
-                    'option_c' => 'O2',
-                    'option_d' => 'NaCl',
-                    'correct_answer' => 'A',
-                    'explanation' => 'Water consists of two hydrogen atoms and one oxygen atom (H2O).',
-                    'difficulty' => 'easy'
-                ],
-                [
-                    'question' => 'How many bones are in the adult human body?',
-                    'option_a' => '206',
-                    'option_b' => '208',
-                    'option_c' => '210',
-                    'option_d' => '212',
-                    'correct_answer' => 'A',
-                    'explanation' => 'The adult human body has 206 bones.',
-                    'difficulty' => 'medium'
-                ],
-                [
-                    'question' => 'What is the speed of light in a vacuum?',
-                    'option_a' => '299,792,458 m/s',
-                    'option_b' => '300,000,000 m/s',
-                    'option_c' => '186,000 miles/s',
-                    'option_d' => 'All of the above are approximately correct',
-                    'correct_answer' => 'D',
-                    'explanation' => 'The speed of light is approximately 299,792,458 m/s, often rounded to 300,000,000 m/s or 186,000 miles/s.',
-                    'difficulty' => 'hard'
-                ]
-            ];
-        }
-        
-        // Geography questions
-        elseif (strpos($subject_lower, 'geography') !== false || strpos($subject_lower, 'social') !== false) {
-            $questions = [
-                [
-                    'question' => 'What is the capital of Nigeria?',
-                    'option_a' => 'Lagos',
-                    'option_b' => 'Abuja',
-                    'option_c' => 'Kano',
-                    'option_d' => 'Port Harcourt',
-                    'correct_answer' => 'B',
-                    'explanation' => 'Abuja has been the capital city of Nigeria since 1991.',
-                    'difficulty' => 'easy'
-                ],
-                [
-                    'question' => 'Which is the longest river in Africa?',
-                    'option_a' => 'Congo River',
-                    'option_b' => 'Niger River',
-                    'option_c' => 'Nile River',
-                    'option_d' => 'Zambezi River',
-                    'correct_answer' => 'C',
-                    'explanation' => 'The Nile River is the longest river in Africa and the world.',
-                    'difficulty' => 'medium'
-                ]
-            ];
-        }
-        
-        // History questions
-        elseif (strpos($subject_lower, 'history') !== false) {
-            $questions = [
-                [
-                    'question' => 'In what year did Nigeria gain independence?',
-                    'option_a' => '1960',
-                    'option_b' => '1963',
-                    'option_c' => '1958',
-                    'option_d' => '1965',
-                    'correct_answer' => 'A',
-                    'explanation' => 'Nigeria gained independence from Britain on October 1, 1960.',
-                    'difficulty' => 'medium'
-                ],
-                [
-                    'question' => 'Who was the first President of Nigeria?',
-                    'option_a' => 'Nnamdi Azikiwe',
-                    'option_b' => 'Abubakar Tafawa Balewa',
-                    'option_c' => 'Obafemi Awolowo',
-                    'option_d' => 'Ahmadu Bello',
-                    'correct_answer' => 'A',
-                    'explanation' => 'Dr. Nnamdi Azikiwe was the first President of Nigeria.',
-                    'difficulty' => 'medium'
-                ]
-            ];
-        }
-        
-        return $questions;
+        // Add more subjects as needed
+        return [];
     }
     
     /**
-     * Get generic question templates that can be adapted to any subject.
+     * Get generic question templates
      */
     private function get_generic_templates($subject) {
         return [
@@ -668,172 +1321,46 @@ Make sure the JSON is valid and properly formatted. Do not include any text befo
                 'correct_answer' => 'A',
                 'explanation' => '{subject} involves systematic study and understanding.',
                 'difficulty' => 'medium'
-            ],
-            [
-                'question' => 'In the study of {subject}, which approach is most effective?',
-                'option_a' => 'Passive reading only',
-                'option_b' => 'Active learning and practice',
-                'option_c' => 'Ignoring fundamental concepts',
-                'option_d' => 'Avoiding challenging topics',
-                'correct_answer' => 'B',
-                'explanation' => 'Active learning and practice are essential for mastering {subject}.',
-                'difficulty' => 'medium'
-            ],
-            [
-                'question' => 'Which statement about {subject} is most accurate?',
-                'option_a' => 'It has no real-world applications',
-                'option_b' => 'It connects to many aspects of life',
-                'option_c' => 'It should be studied in isolation',
-                'option_d' => 'It requires no critical thinking',
-                'correct_answer' => 'B',
-                'explanation' => '{subject} connects to many aspects of daily life and other fields of study.',
-                'difficulty' => 'medium'
             ]
         ];
     }
     
     /**
-     * Generate personalized feedback for a user's quiz performance.
+     * Fix common JSON issues
      */
-    public function generate_feedback($user_data, $attempt_data, $answers_data) {
-        if (!$this->is_configured()) {
-            return new WP_Error('ai_not_configured', __('AI is not configured for feedback generation.', 'ai-quiz-system'));
-        }
+    private function fix_json_content($content) {
+        // Replace single quotes with double quotes
+        $content = str_replace("'", '"', $content);
         
-        $user_name = $user_data->display_name ?: $user_data->user_login;
-        $score_percentage = round($attempt_data->score, 1);
-        $correct_count = $attempt_data->correct_answers;
-        $total_questions = $attempt_data->total_questions;
+        // Fix missing quotes around keys
+        $content = preg_replace('/([{,])\s*([a-zA-Z0-9_]+)\s*:/', '$1"$2":', $content);
         
-        $system_prompt = "You are an expert educational tutor providing personalized feedback to students in Nigeria/Africa. Be encouraging, specific, and helpful.";
+        // Remove trailing commas
+        $content = preg_replace('/,\s*(\}|\])/', '$1', $content);
         
-        $prompt = "Generate personalized feedback for {$user_name} who just completed a {$attempt_data->exam_name} quiz. 
-
-Performance Summary:
-- Score: {$score_percentage}% ({$correct_count}/{$total_questions} correct)
-- Subject areas covered: " . implode(', ', array_unique(array_column($answers_data, 'subject_name'))) . "
-
-Detailed Answer Analysis:";
+        // Convert None/null/undefined to empty strings
+        $content = preg_replace('/"[^"]+"\s*:\s*(null|None|undefined)/', '"$1": ""', $content);
         
-        // Add details about incorrect answers
-        $incorrect_answers = array_filter($answers_data, function($answer) {
-            return !$answer['is_correct'];
-        });
-        
-        if (!empty($incorrect_answers)) {
-            $prompt .= "\n\nAreas needing improvement:";
-            foreach ($incorrect_answers as $answer) {
-                $prompt .= "\n- {$answer['subject_name']}: Question about '{$answer['question']}' - Student answered '{$answer['user_answer']}', correct answer was '{$answer['correct_answer']}'";
-            }
-        }
-        
-        $prompt .= "\n\nProvide:
-1. Overall performance assessment
-2. Specific strengths observed
-3. Areas for improvement with study suggestions
-4. Encouraging words and next steps
-5. Recommended focus areas for future study
-
-Keep the feedback positive, constructive, and tailored to a Nigerian/African educational context. Limit to 300 words.";
-        
-        $response = $this->send_request($prompt, $system_prompt, 500);
-        
-        if (is_wp_error($response)) {
-            aiqs_debug_log('AI feedback generation failed', $response->get_error_message());
-            return $this->generate_default_feedback($attempt_data);
-        }
-        
-        return $response;
+        return $content;
     }
     
     /**
-     * Generate default feedback when AI is not available.
-     */
-    private function generate_default_feedback($attempt_data) {
-        $score = $attempt_data->score;
-        
-        if ($score >= 80) {
-            return "Excellent work! You scored {$score}% on this quiz. Your strong performance shows you have a solid understanding of the material. Keep up the great work and continue to challenge yourself with more advanced topics.";
-        } elseif ($score >= 70) {
-            return "Good job! You scored {$score}% on this quiz. You're on the right track and showing good understanding. Focus on reviewing the questions you missed to strengthen your knowledge further.";
-        } elseif ($score >= 60) {
-            return "You scored {$score}% on this quiz. This shows you have some understanding of the material, but there's room for improvement. Review the topics covered in this quiz and practice more questions to build your confidence.";
-        } else {
-            return "You scored {$score}% on this quiz. Don't be discouraged - learning takes time and practice. Review the material covered in this quiz, ask for help if needed, and try again. Each attempt helps you learn and improve.";
-        }
-    }
-    
-    /**
-     * Process chatbot query for personalized learning assistance.
+     * Process legacy chatbot query (for backward compatibility)
      */
     public function process_chatbot_query($query, $user_data = null, $performance_data = null) {
-        if (!$this->is_configured()) {
-            return $this->generate_default_chatbot_response($query);
+        $user_id = $user_data ? $user_data->ID : null;
+        
+        // Generate a session ID for legacy calls
+        $session_id = 'legacy_' . uniqid();
+        
+        $result = $this->process_conversational_query($query, $user_id, $session_id);
+        
+        if (is_array($result) && isset($result['response'])) {
+            return $result['response'];
         }
         
-        $system_prompt = "You are Rita, a friendly and knowledgeable AI tutor for Nigerian/African students. You help with academic questions, provide study guidance, and offer encouragement. Be helpful, culturally aware, and educational.";
-        
-        $context = "Student query: {$query}";
-        
-        if ($user_data) {
-            $context .= "\nStudent name: {$user_data->display_name}";
-        }
-        
-        if ($performance_data && !empty($performance_data)) {
-            $context .= "\nRecent performance context: ";
-            if (isset($performance_data['average_score'])) {
-                $context .= "Average score: {$performance_data['average_score']}%, ";
-            }
-            if (isset($performance_data['total_attempts'])) {
-                $context .= "Total quiz attempts: {$performance_data['total_attempts']}, ";
-            }
-            if (isset($performance_data['weak_subjects'])) {
-                $context .= "Areas needing improvement: " . implode(', ', $performance_data['weak_subjects']);
-            }
-        }
-        
-        $prompt = "{$context}
-
-Please provide a helpful, encouraging response. If it's an academic question, explain concepts clearly. If it's about study strategies, provide practical advice suitable for Nigerian/African students. Keep responses concise but informative (under 200 words).";
-        
-        $response = $this->send_request($prompt, $system_prompt, 300);
-        
-        if (is_wp_error($response)) {
-            return $this->generate_default_chatbot_response($query);
-        }
-        
-        return $response;
-    }
-    
-    /**
-     * Generate default chatbot response when AI is not available.
-     */
-    private function generate_default_chatbot_response($query) {
-        $query_lower = strtolower($query);
-        
-        // Simple keyword-based responses
-        if (strpos($query_lower, 'hello') !== false || strpos($query_lower, 'hi') !== false) {
-            return "Hello! I'm Rita, your study assistant. How can I help you with your studies today?";
-        }
-        
-        if (strpos($query_lower, 'help') !== false) {
-            return "I'm here to help! You can ask me questions about your subjects, request study tips, or get guidance on quiz preparation. What would you like to know?";
-        }
-        
-        if (strpos($query_lower, 'math') !== false) {
-            return "Mathematics can be challenging, but with practice it becomes easier! Try breaking down complex problems into smaller steps, practice regularly, and don't hesitate to ask for help when needed.";
-        }
-        
-        if (strpos($query_lower, 'english') !== false) {
-            return "English language skills improve with reading and practice! Try reading different types of texts, practice writing regularly, and focus on grammar fundamentals.";
-        }
-        
-        if (strpos($query_lower, 'study') !== false || strpos($query_lower, 'learn') !== false) {
-            return "Here are some effective study tips: 1) Create a study schedule, 2) Take regular breaks, 3) Practice active recall, 4) Form study groups, 5) Use different learning methods. What subject are you focusing on?";
-        }
-        
-        // Default response
-        return "Thank you for your question! While I'd love to give you a detailed answer, I'm currently working with limited capabilities. For the best help with your studies, please try asking more specific questions about particular subjects or study strategies.";
+        return $result;
     }
 }
+
 ?>
