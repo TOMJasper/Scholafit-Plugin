@@ -83,8 +83,11 @@ class AI_Quiz_System {
         $this->loader->add_action('wp_ajax_aiqs_delete_exam', $plugin_admin, 'delete_exam');
         $this->loader->add_action('wp_ajax_aiqs_get_question_stats', $plugin_admin, 'get_question_stats');
         $this->loader->add_action('wp_ajax_aiqs_test_ai_connection', $plugin_admin, 'test_ai_connection');
+       
+	// Add this line with other AJAX handlers
+        $this->loader->add_action('wp_ajax_aiqs_get_subjects', $plugin_admin, 'get_subjects_ajax');
         
-        // Subject management AJAX handlers
+	// Subject management AJAX handlers
         $this->loader->add_action('wp_ajax_aiqs_add_subject', $plugin_admin, 'add_subject');
         $this->loader->add_action('wp_ajax_aiqs_update_subject', $plugin_admin, 'update_subject');
         $this->loader->add_action('wp_ajax_aiqs_delete_subject', $plugin_admin, 'delete_subject');
